@@ -822,12 +822,12 @@ def main():
     app.add_handler(CallbackQueryHandler(rec_del_callback, pattern="^rec_del:"))
     app.add_handler(CallbackQueryHandler(menu_callback))
 
-    # ── Scheduled job: overdue reminders every 2 hours ──
+    # ── Scheduled job: overdue reminders every 8 hours ──
     job_queue = app.job_queue
     job_queue.run_repeating(
         check_overdue,
-        interval=7200,  # every 2 hours
-        first=60,       # start 1 min after boot
+        interval=28800,  # every 8 hours
+        first=60,        # start 1 min after boot
     )
 
     logger.info("Bot started!")
