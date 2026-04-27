@@ -197,7 +197,39 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ═══════════════════════════════════════════════════════
 #  TASK VIEWS
 # ═══════════════════════════════════════════════════════
+#
+async def show_all_tasks(query, context):
+    user = context.user_data["db_user"]
+    # Предполагаем, что db.get_all_tasks_for_user возвращает и разовые, и регулярные
+    tasks = db.get_all_tasks_for_user(user["id"]) 
+    
+    if not tasks:
+        await query.edit_message_text(
+            "📋 Список задач пуст.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Меню", callback_data="main_menu")]])
+        )
+        return
 
+    for t in tasks:
+        card = format_task_card(t)
+        is_rec = t.get("is_recurring", False)
+        
+        # Динамические кнопки: для регулярных — одна логика, для разовых — другая
+        callback_done = f"rec_done:{t['id']}" if is_rec else f"done:{t['id']}"
+        
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Выполнено", callback_data=callback_done)],
+            [InlineKeyboardButton("🗑 Удалить", callback_data=f"delete_task:{t['id']}")]
+        ])
+        await query.message.reply_text(card, reply_markup=kb, parse_mode="HTML")
+
+    await query.message.reply_text(
+        f"Всего задач: {len(tasks)}",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Меню", callback_data="main_menu")]])
+    )
+    try: await query.message.delete()
+    except: pass
+'''
 async def show_my_tasks(query, context):
     user = context.user_data["db_user"]
     tasks = db.get_tasks_for_user(user["id"])
@@ -228,7 +260,7 @@ async def show_my_tasks(query, context):
         await query.message.delete()
     except Exception:
         pass
-
+'''
 
 async def show_today(query, context):
     user = context.user_data["db_user"]
