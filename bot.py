@@ -224,8 +224,11 @@ async def show_my_tasks(query, context):
         # Добавляем значок 🔄 к заголовку в карточке, если задача регулярная
         display_task = t.copy()
         if t.get("recurrence_type"):
-            display_task["title"] = f"🔄 {t['title']}"
-        
+            # Добавляем не только значок, но и периодичность в заголовок для наглядности
+            rec_type = t.get("recurrence_type")
+            label = RECURRENCE_LABELS.get(rec_type, "")
+            display_task["title"] = f"🔄 {t['title']} ({label})"  
+            
         card = format_task_card(display_task)
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("✅ Выполнено", callback_data=f"done:{t['id']}")]
@@ -391,12 +394,20 @@ async def task_recurrence_type_received(update: Update, context: ContextTypes.DE
 
 @authorized
 async def task_recurrence_params_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Обработка текстового ввода для интервала
-    if update.message:
-        text = update.message.text.strip()
-        if not text.isdigit():
-            await update.message.reply_text("❌ Введите число:")
+    rtype = context.user_data["new_task"].get("recurrence_type")
+    
+    if rtype == "interval":
+        if not update.message or not update.message.text.isdigit():
+            await update.effective_message.reply_text("🔢 Пожалуйста, введите число дней:")
             return TASK_RECURRENCE_PARAMS
+        context.user_data["new_task"]["recurrence_value"] = int(update.message.text)
+        return await _ask_deadline_message(update)
+    
+    if rtype == "weekly":
+        if not update.callback_query:
+            await update.effective_message.reply_text("📆 Пожалуйста, выберите день недели на кнопках выше.")
+            return TASK_RECURRENCE_PARAMS
+            
         context.user_data["new_task"]["recurrence_value"] = int(text)
         # После ввода текста нам нужно вручную вызвать отправку вопроса про дедлайн
         return await _ask_deadline_message(update)
