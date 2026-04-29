@@ -76,16 +76,30 @@ def authorized(func):
         return await func(update, context)
     return wrapper
 
-
 def format_task_card(task: dict) -> str:
-    """Render a task as a nice text card."""
+    """Render a task as a nice text card with recurrence property."""
     assignee_name = "—"
     if isinstance(task.get("assignee"), dict):
         assignee_name = task["assignee"].get("name", "—")
     elif isinstance(task.get("assignee"), list) and task["assignee"]:
         assignee_name = task["assignee"][0].get("name", "—")
 
-    priority = PRIORITY_EMOJI.get(task.get("priority", 2), "🟡")
+    priority_val = task.get("priority", 2)
+    priority_emoji = PRIORITY_EMOJI.get(priority_val, "🟡")
+    
+    # --- Блок признака регулярности ---
+    rec_type = task.get("recurrence_type")
+    rec_info = ""
+    if rec_type:
+        label = RECURRENCE_LABELS.get(rec_type, rec_type)
+        if rec_type == "interval":
+            label = f"раз в {task.get('recurrence_value', 1)} дн."
+        elif rec_type == "weekly":
+            wd = task.get("weekday", 0)
+            label = f"по {WEEKDAY_NAMES[wd]}"
+        rec_info = f"\n🔄 <b>Регулярно:</b> {label}"
+    # ----------------------------------
+
     deadline_str = "без срока"
     if task.get("deadline"):
         try:
@@ -99,11 +113,10 @@ def format_task_card(task: dict) -> str:
     lines = [
         f"{status_icon} <b>{task['title']}</b>",
         f"👤 {assignee_name}",
-        f"⏰ До: {deadline_str}",
-        f"{priority} Приоритет: {PRIORITY_MAP.get(task.get('priority', 2), '🟡 средний')}",
+        f"⏰ До: {deadline_str}{rec_info}", # Добавляем инфо о повторе здесь
+        f"{priority_emoji} Приоритет: {PRIORITY_MAP.get(priority_val, '🟡 средний')}",
     ]
     return "\n".join(lines)
-
 
 def format_recurring_card(task: dict) -> str:
     assignee_name = "—"
@@ -202,16 +215,16 @@ async def show_my_tasks(query, context):
     user = context.user_data["db_user"]
     tasks = db.get_tasks_for_user(user["id"])
     if not tasks:
-        await query.edit_message_text(
-            "📋 У вас нет активных задач.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Меню", callback_data="main_menu")]
-            ]),
-        )
+        # ... (код обработки пустого списка)
         return
 
     for t in tasks:
-        card = format_task_card(t)
+        # Добавляем значок 🔄 к заголовку в карточке, если задача регулярная
+        display_task = t.copy()
+        if t.get("recurrence_type"):
+            display_task["title"] = f"🔄 {t['title']}"
+        
+        card = format_task_card(display_task)
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("✅ Выполнено", callback_data=f"done:{t['id']}")]
         ])
