@@ -33,10 +33,12 @@ tz = pytz.timezone(config.BOT_TIMEZONE)
 (
     TASK_TITLE,
     TASK_ASSIGNEE,
+    TASK_RECURRENCE_TYPE,    # Новый шаг: выбор типа (нет, ежедневно и т.д.)
+    TASK_RECURRENCE_PARAMS,  # Новый шаг: ввод интервала или дня недели
     TASK_DEADLINE_CHOICE,
     TASK_DEADLINE_DATE,
     TASK_PRIORITY,
-) = range(5)
+) = range(7)
 
 (
     REC_TITLE,
@@ -338,6 +340,7 @@ async def task_title_received(update: Update, context: ContextTypes.DEFAULT_TYPE
     return TASK_ASSIGNEE
 
 
+# --- В существующую функцию выбора исполнителя добавляем переход к регулярности ---
 @authorized
 async def task_assignee_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -349,15 +352,79 @@ async def task_assignee_received(update: Update, context: ContextTypes.DEFAULT_T
     user_id = query.data.split(":")[1]
     context.user_data["new_task"]["assigned_to"] = user_id
 
+    # Теперь спрашиваем про регулярность
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Нет (разовая)", callback_data="rt:none")],
+        [InlineKeyboardButton("📅 Ежедневно", callback_data="rt:daily")],
+        [InlineKeyboardButton("🔢 Раз в N дней", callback_data="rt:interval")],
+        [InlineKeyboardButton("📆 Раз в неделю", callback_data="rt:weekly")],
+    ])
+    await query.edit_message_text("🔄 Сделать задачу регулярной?", reply_markup=kb)
+    return TASK_RECURRENCE_TYPE
+
+# --- Новые функции для обработки регулярности ---
+
+@authorized
+async def task_recurrence_type_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    rtype = query.data.split(":")[1]
+    
+    if rtype == "none":
+        context.user_data["new_task"]["recurrence_type"] = None
+        return await _ask_deadline(query) # Переход к дедлайну
+
+    context.user_data["new_task"]["recurrence_type"] = rtype
+
+    if rtype == "daily":
+        return await _ask_deadline(query)
+
+    if rtype == "interval":
+        await query.edit_message_text("🔢 Введите количество дней (число):")
+        return TASK_RECURRENCE_PARAMS
+
+    if rtype == "weekly":
+        buttons = [[InlineKeyboardButton(name, callback_data=f"twd:{i}")] 
+                   for i, name in enumerate(WEEKDAY_NAMES)]
+        await query.edit_message_text("📆 Выберите день недели:", reply_markup=InlineKeyboardMarkup(buttons))
+        return TASK_RECURRENCE_PARAMS
+
+@authorized
+async def task_recurrence_params_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Обработка текстового ввода для интервала
+    if update.message:
+        text = update.message.text.strip()
+        if not text.isdigit():
+            await update.message.reply_text("❌ Введите число:")
+            return TASK_RECURRENCE_PARAMS
+        context.user_data["new_task"]["recurrence_value"] = int(text)
+        # После ввода текста нам нужно вручную вызвать отправку вопроса про дедлайн
+        return await _ask_deadline_message(update)
+
+    # Обработка нажатия кнопки для дня недели
+    query = update.callback_query
+    await query.answer()
+    weekday = int(query.data.split(":")[1])
+    context.user_data["new_task"]["weekday"] = weekday
+    return await _ask_deadline(query)
+
+# Вспомогательные функции для перехода к следующему шагу
+async def _ask_deadline(query):
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("📅 Выбрать дату", callback_data="dl_date")],
         [InlineKeyboardButton("🚫 Без срока", callback_data="dl_none")],
-        [InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
     ])
-    await query.edit_message_text("⏰ Установить дедлайн?", reply_markup=kb)
+    await query.edit_message_text("⏰ Установить первый дедлайн?", reply_markup=kb)
     return TASK_DEADLINE_CHOICE
 
-
+async def _ask_deadline_message(update):
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📅 Выбрать дату", callback_data="dl_date")],
+        [InlineKeyboardButton("🚫 Без срока", callback_data="dl_none")],
+    ])
+    await update.message.reply_text("⏰ Установить первый дедлайн?", reply_markup=kb)
+    return TASK_DEADLINE_CHOICE
+    
 @authorized
 async def task_deadline_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
