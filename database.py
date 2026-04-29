@@ -36,23 +36,40 @@ def create_task(
     deadline: Optional[str] = None,
     priority: int = 2,
     description: Optional[str] = None,
+    recurrence_type: Optional[str] = None,
+    recurrence_value: Optional[int] = None,
+    weekday: Optional[int] = None,
 ) -> dict:
-    """Create a one-time task. Returns the created row."""
+    """
+    Создает задачу. Если передан recurrence_type, задача помечается как регулярная.
+    """
+    # Определяем, является ли задача регулярной
+    is_recurring = recurrence_type is not None
+
     payload = {
         "title": title,
         "assigned_to": assigned_to,
         "created_by": created_by,
         "priority": priority,
         "status": "pending",
-        "is_recurring": False,
+        "is_recurring": is_recurring,
+        "recurrence_type": recurrence_type,
+        "recurrence_value": recurrence_value,
+        "weekday": weekday,
     }
+
     if deadline:
         payload["deadline"] = deadline
     if description:
         payload["description"] = description
-    res = supabase.table("tasks").insert(payload).execute()
-    return res.data[0]
 
+    # Выполняем вставку в таблицу tasks
+    res = supabase.table("tasks").insert(payload).execute()
+    
+    if not res.data:
+        raise Exception("Ошибка при создании задачи в базе данных")
+        
+    return res.data[0]
 
 def get_tasks_for_user(user_id: str, status: str = "pending") -> list[dict]:
     """Return pending tasks assigned to a user."""
