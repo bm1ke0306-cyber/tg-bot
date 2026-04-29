@@ -426,26 +426,6 @@ async def _ask_deadline_message(update):
     return TASK_DEADLINE_CHOICE
     
 @authorized
-async def task_priority_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    priority = int(query.data.split(":")[1])
-    new = context.user_data["new_task"]
-    
-    user = context.user_data["db_user"]
-    # Передаем расширенный набор аргументов в функцию создания
-    task = db.create_task(
-        title=new["title"],
-        assigned_to=new["assigned_to"],
-        created_by=user["id"],
-        deadline=new.get("deadline"),
-        priority=priority,
-        recurrence_type=new.get("recurrence_type"),
-        recurrence_value=new.get("recurrence_value"),
-        weekday=new.get("weekday")
-    )
-    
-@authorized
 async def task_deadline_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -532,39 +512,44 @@ async def _ask_priority(query):
     await query.edit_message_text("🔥 Приоритет:", reply_markup=kb)
     return TASK_PRIORITY
 
-
 @authorized
 async def task_priority_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    
     priority = int(query.data.split(":")[1])
     new = context.user_data["new_task"]
     new["priority"] = priority
 
     user = context.user_data["db_user"]
+    
+    # Сохраняем задачу со всеми свойствами рекурсии
     task = db.create_task(
         title=new["title"],
         assigned_to=new["assigned_to"],
         created_by=user["id"],
         deadline=new.get("deadline"),
         priority=priority,
+        recurrence_type=new.get("recurrence_type"),
+        recurrence_value=new.get("recurrence_value"),
+        weekday=new.get("weekday")
     )
 
-    card = format_task_card(task if "assignee" in task else db.get_task_by_id(task["id"]))
+    # Если база вернула только ID, подтягиваем полную инфо для карточки
+    full_task = task if "assignee" in task else db.get_task_by_id(task["id"])
+    card = format_task_card(full_task)
+    
     await query.edit_message_text(
         f"✅ Задача создана!\n\n{card}",
         parse_mode="HTML",
     )
 
-    # Notify the assignee
-    if new["assigned_to"] != user["id"]:
-        assignee = db.get_user_by_telegram_id(0)  # placeholder
-        # Actually look up the user properly
+    # Уведомление исполнителя
+    if str(new["assigned_to"]) != str(user["id"]):
         all_users = db.get_all_users()
         for u in all_users:
-            if u["id"] == new["assigned_to"]:
+            if str(u["id"]) == str(new["assigned_to"]):
                 try:
-                    full_task = db.get_task_by_id(task["id"])
                     await context.bot.send_message(
                         chat_id=u["telegram_id"],
                         text=f"📬 Новая задача от {user['name']}:\n\n{format_task_card(full_task)}",
@@ -574,13 +559,11 @@ async def task_priority_received(update: Update, context: ContextTypes.DEFAULT_T
                     logger.warning(f"Failed to notify user {u['telegram_id']}: {e}")
                 break
 
-    # Show menu again
     await query.message.reply_text(
         "Выберите действие:",
         reply_markup=MAIN_MENU_KB,
     )
-    return ConversationHandler.END
-
+    return ConversationHandler.END    
 
 @authorized
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
