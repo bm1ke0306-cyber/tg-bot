@@ -426,6 +426,26 @@ async def _ask_deadline_message(update):
     return TASK_DEADLINE_CHOICE
     
 @authorized
+async def task_priority_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    priority = int(query.data.split(":")[1])
+    new = context.user_data["new_task"]
+    
+    user = context.user_data["db_user"]
+    # Передаем расширенный набор аргументов в функцию создания
+    task = db.create_task(
+        title=new["title"],
+        assigned_to=new["assigned_to"],
+        created_by=user["id"],
+        deadline=new.get("deadline"),
+        priority=priority,
+        recurrence_type=new.get("recurrence_type"),
+        recurrence_value=new.get("recurrence_value"),
+        weekday=new.get("weekday")
+    )
+    
+@authorized
 async def task_deadline_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -843,6 +863,12 @@ def main():
             ],
             TASK_ASSIGNEE: [
                 CallbackQueryHandler(task_assignee_received, pattern="^(assignee:|cancel)"),
+            ],
+            # Новые состояния:
+            TASK_RECURRENCE_TYPE: [CallbackQueryHandler(task_recurrence_type_received, pattern="^rt:")],
+            TASK_RECURRENCE_PARAMS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, task_recurrence_params_received),
+                CallbackQueryHandler(task_recurrence_params_received, pattern="^twd:")
             ],
             TASK_DEADLINE_CHOICE: [
                 CallbackQueryHandler(task_deadline_choice, pattern="^(dl_|cancel)"),
